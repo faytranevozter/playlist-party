@@ -1,7 +1,6 @@
 import { Context, Markup, NarrowedContext } from "telegraf";
 import { Action, Command, On } from "../decorators/bot.decorator";
 import { PlayCurrentSong } from "../func/utils";
-import { PlayFromHome } from "../func/player";
 import {
   addQueue,
   addToPlayNext,
@@ -23,30 +22,41 @@ import {
   unsubscribe,
 } from "../repository/subscriber";
 import {
-  CallbackQuery,
-  InlineQueryResult,
-  Message,
   Update,
-} from "telegraf/typings/core/types/typegram";
+  Message,
+  InlineQueryResult,
+  CallbackQuery,
+} from "telegraf/types";
+// import {
+//   CallbackQuery,
+//   InlineQueryResult,
+//   Message,
+//   Update,
+// } from "telegraf/typings/core/types/typegram";
 
 const prisma = new PrismaClient();
 
 export class Player {
   @Command("pause")
-  async pause(ctx: Context) {
+  async pause(ctx: Context<Update.MessageUpdate<Message.TextMessage>>) {
     if (globalThis.statusPlay !== "playing") {
       ctx.reply("NOTHING PLAYED");
       return;
     }
     try {
       // wait for play mode, make sure is playing
-      await globalThis.playerPage.waitForSelector(
-        `#play-pause-button[title="Pause"]:not([hidden])`,
-      );
-      // pause (prevent playing unwanted next song)
-      await globalThis.playerPage.click(
-        `#play-pause-button[title="Pause"]:not([hidden])`,
-      );
+      // await globalThis.playerPage.waitForSelector(
+      //   `#play-pause-button[title="Pause"]:not([hidden])`,
+      // );
+      // // pause (prevent playing unwanted next song)
+      // await globalThis.playerPage.click(
+      //   `#play-pause-button[title="Pause"]:not([hidden])`,
+      // );
+
+      globalThis.socket.emit("pause", {
+        queue: globalThis.currentQueue,
+      });
+
       // update status play
       globalThis.statusPlay = "paused";
       ctx.reply("PAUSED");
@@ -56,24 +66,18 @@ export class Player {
   }
 
   @Command("play")
-  async play(ctx: Context) {
+  async play(ctx: Context<Update.MessageUpdate<Message.TextMessage>>) {
     if (globalThis.statusPlay == "playing") {
       ctx.reply("ITS CURRENTLY PLAYING");
       return;
     } else if (globalThis.statusPlay == "paused") {
       try {
-        // wait for play mode, make sure is playing
-        await globalThis.playerPage.waitForSelector(
-          `#play-pause-button[title="Play"]:not([hidden])`,
-        );
-
-        // pause (prevent playing unwanted next song)
-        await globalThis.playerPage.click(
-          `#play-pause-button[title="Play"]:not([hidden])`,
-        );
-
         // update status play
         globalThis.statusPlay = "playing";
+
+        globalThis.socket.emit("resume", {
+          queue: globalThis.currentQueue,
+        });
 
         ctx.reply("RESUMING PLAYER");
       } catch (error) {
@@ -82,11 +86,11 @@ export class Player {
       return;
     }
 
-    PlayCurrentSong(true);
+    PlayCurrentSong();
   }
 
   @Command("info")
-  info(ctx: Context) {
+  info(ctx: Context<Update.MessageUpdate<Message.TextMessage>>) {
     if (globalThis.statusPlay !== "playing") {
       ctx.reply("NOTHING PLAYED");
       return;
@@ -98,59 +102,21 @@ export class Player {
   }
 
   @Command("lyrics")
-  async lyrics(ctx: Context) {
+  async lyrics(ctx: Context<Update.MessageUpdate<Message.TextMessage>>) {
     if (globalThis.statusPlay !== "playing") {
       ctx.reply("NOTHING PLAYED");
       return;
     }
 
-    await globalThis.playerPage.waitForSelector(
-      ".tab-header.style-scope.ytmusic-player-page:nth-of-type(2)",
-    );
-
-    let lyrics = "Lyrics not available";
-    if (
-      (await globalThis.playerPage.$(
-        ".tab-header.style-scope.ytmusic-player-page:nth-of-type(2):not([disabled])",
-      )) !== null
-    ) {
-      await globalThis.playerPage.click(
-        ".tab-header.style-scope.ytmusic-player-page:nth-of-type(2)",
-      );
-      const lyricEl = await globalThis.playerPage.waitForSelector(
-        ".non-expandable.description.ytmusic-description-shelf-renderer",
-      );
-
-      lyrics = (await lyricEl?.evaluate((el) => el.textContent)) || lyrics;
-
-      const lyricDescEl = await globalThis.playerPage.waitForSelector(
-        ".footer.ytmusic-description-shelf-renderer",
-      );
-      const lyricsDesc = await lyricDescEl?.evaluate((el) => el.textContent);
-      if (lyricsDesc) {
-        lyrics += `\n\n<code>${lyricsDesc}</code>`;
-      }
-    }
+    const lyrics = "Lyrics not available";
 
     ctx.reply(lyrics, {
       parse_mode: "HTML",
     });
   }
 
-  @Command("trending")
-  trending(ctx: Context) {
-    PlayFromHome(globalThis.playerPage, "TRENDING");
-    ctx.reply("Playing from trending");
-  }
-
-  @Command("quick_pick")
-  quickPick(ctx: Context) {
-    ctx.reply("Playing from quick pick");
-    PlayFromHome(globalThis.playerPage, "QUICK_PICK");
-  }
-
   @Command("queue")
-  async queue(ctx: Context) {
+  async queue(ctx: Context<Update.MessageUpdate<Message.TextMessage>>) {
     const queues = await getQueues(prisma);
     if (queues.length > 0) {
       ctx;
@@ -170,7 +136,7 @@ export class Player {
   }
 
   @Command("next")
-  async nextHandler(ctx: Context) {
+  async nextHandler(ctx: Context<Update.MessageUpdate<Message.TextMessage>>) {
     {
       if (ctx.message?.from.id != 233041497) {
         ctx.reply("HEI!!");
@@ -187,7 +153,7 @@ export class Player {
   }
 
   @Command("subscribe")
-  async subscribe(ctx: Context) {
+  async subscribe(ctx: Context<Update.MessageUpdate<Message.TextMessage>>) {
     {
       if (!ctx.chat?.id) return;
       const subscriber: Subscriber | null = await getSubscriberByChatID(
@@ -217,7 +183,7 @@ export class Player {
   }
 
   @Command("unsubscribe")
-  async unsubscribe(ctx: Context) {
+  async unsubscribe(ctx: Context<Update.MessageUpdate<Message.TextMessage>>) {
     if (!ctx?.chat?.id) return;
     const subscriber: Subscriber | null = await getSubscriberByChatID(
       prisma,
@@ -237,13 +203,7 @@ export class Player {
   }
 
   @Command("subscriber")
-  async subscriber(
-    ctx: Context<{
-      message: Update.New & Update.NonChannel & Message.TextMessage;
-      update_id: number;
-    }> &
-      Omit<Context<Update>, keyof Context<Update>>,
-  ) {
+  async subscriber(ctx: Context<Update.MessageUpdate<Message.TextMessage>>) {
     const subscribers: Subscriber[] = await getSubscribedList(prisma);
     if (subscribers.length === 0) {
       await ctx.reply("No Subscriber", {
@@ -264,13 +224,7 @@ export class Player {
   }
 
   @Command("vote_next")
-  async vote_next(
-    ctx: Context<{
-      message: Update.New & Update.NonChannel & Message.TextMessage;
-      update_id: number;
-    }> &
-      Omit<Context<Update>, keyof Context<Update>>,
-  ) {
+  async vote_next(ctx: Context<Update.MessageUpdate<Message.TextMessage>>) {
     if (globalThis.statusPlay !== "playing") {
       ctx.reply("NOTHING PLAYED");
       return;
@@ -444,16 +398,7 @@ export class Player {
     // if there is queue
     if (nextExist && nextQueue !== null) {
       // stop interval checking dom
-      clearInterval(globalThis.playerTimer);
-
-      // bypass "Leave site?"
-      await globalThis.playerPage.click(
-        `#play-pause-button[title="Pause"]:not([hidden])`,
-      );
-
-      // await page.evaluate(() => {
-      //   window.onbeforeunload = null;
-      // });
+      // clearInterval(globalThis.playerTimer);
 
       // set finish
       if (
@@ -470,10 +415,11 @@ export class Player {
       globalThis.currentTitle = nextQueue.title;
 
       // play current song with refresh
-      await PlayCurrentSong(true);
+      await PlayCurrentSong();
     } else {
       // click next song
-      await playerPage.click(`.ytmusic-player-bar[title="Next"]`);
+      // @todo: get related song
+      // await playerPage.click(`.ytmusic-player-bar[title="Next"]`);
     }
   }
 }

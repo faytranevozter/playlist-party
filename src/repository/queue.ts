@@ -1,15 +1,10 @@
 import { PrismaClient, Queue, SearchResult } from "@prisma/client";
 import dayjs, { type Dayjs } from "dayjs";
-// import getYouTubeID from "get-youtube-id";
-// import { YoutubeMeta, getYoutubeMeta } from "./util/youtube";
 
 export const addQueue = async (
   prisma: PrismaClient,
   sr: SearchResult,
 ): Promise<[boolean, string]> => {
-  // const meta: YoutubeMeta = await getYoutubeMeta(url);
-  // const musicID: string | null = getYouTubeID(url);
-
   const resCount = await prisma.queue.count({
     where: {
       musicID: sr.musicID,
@@ -41,9 +36,6 @@ export const addToPlayNext = async (
   prisma: PrismaClient,
   sr: SearchResult,
 ): Promise<[boolean, string]> => {
-  // const meta: YoutubeMeta = await getYoutubeMeta(url);
-  // const musicID: string | null = getYouTubeID(url);
-
   const res = await prisma.queue.findFirst({
     where: {
       playedAt: null,

@@ -1,7 +1,5 @@
-import getYouTubeID from "get-youtube-id";
 import YTMusic, { SongDetailed } from "ytmusic-api";
 import fmtDuration from "format-duration";
-import { getCookies } from "../func/cookies";
 
 let ytmusic: YTMusic | null = null;
 
@@ -28,9 +26,7 @@ export const SearchSong = async (
     console.log("init");
     ytmusic = new YTMusic();
 
-    await ytmusic.initialize({
-      cookies: getCookies(),
-    });
+    await ytmusic.initialize({});
   }
 
   return ytmusic.searchSongs(q);
@@ -38,15 +34,6 @@ export const SearchSong = async (
 
 export const convertVideoIDtoMusicID = (videoID: string): string => {
   return `watch?v=${videoID}`;
-};
-
-export const getYoutubeMeta = async (url: string): Promise<YoutubeMeta> => {
-  const musicID: string | null = getYouTubeID(url);
-  const res = await fetch(
-    `https://youtube.com/oembed?format=json&url=https://youtube.com/watch?v=${musicID}`,
-  );
-  const response = await res.json();
-  return response;
 };
 
 export const convertDuration = (duration: string): number => {

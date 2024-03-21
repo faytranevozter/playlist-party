@@ -1,83 +1,30 @@
-import puppeteer from "puppeteer-extra";
+import express from "express";
 import { PrismaClient } from "@prisma/client";
-import { initCookies } from "./func/cookies";
-import Adblocker from "puppeteer-extra-plugin-adblocker";
-import StealthPlugin from "puppeteer-extra-plugin-stealth";
-import { Browser, Page } from "puppeteer";
-import { PuppeteerBlocker } from "@cliqz/adblocker-puppeteer";
 
 import { getQueue } from "./repository/queue";
 
 import { Player } from "./events/player";
 import { useBot } from "./libs/bot";
+import { appDomain, port } from "./config/config";
+import { Server } from "socket.io";
+import cors from "cors";
+import http from "http";
 
 (async () => {
   const prisma = new PrismaClient();
 
-  // Launch the browser
-  const browser: Browser = await puppeteer
-    .use(Adblocker({ blockTrackers: true }))
-    .use(StealthPlugin())
-    .launch({
-      // headless: false,
-      headless: "new",
-      ignoreDefaultArgs: ["--mute-audio"],
-      args: [
-        '--user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:86.0) Gecko/20100101 Firefox/86.0"',
-        "--autoplay-policy=no-user-gesture-required",
-        "--autoplay-policy=user-gesture-required",
-        "--disable-background-networking",
-        "--disable-background-timer-throttling",
-        "--disable-backgrounding-occluded-windows",
-        "--disable-breakpad",
-        "--disable-client-side-phishing-detection",
-        "--disable-component-update",
-        "--disable-default-apps",
-        "--disable-dev-shm-usage",
-        "--disable-domain-reliability",
-        "--disable-extensions",
-        "--disable-features=AudioServiceOutOfProcess",
-        "--disable-hang-monitor",
-        "--disable-ipc-flooding-protection",
-        "--disable-notifications",
-        "--disable-offer-store-unmasked-wallet-cards",
-        "--disable-popup-blocking",
-        "--disable-print-preview",
-        "--disable-prompt-on-repost",
-        "--disable-renderer-backgrounding",
-        "--disable-setuid-sandbox",
-        "--disable-speech-api",
-        "--disable-sync",
-        "--hide-scrollbars",
-        "--ignore-gpu-blacklist",
-        "--metrics-recording-only",
-        "--mute-audio",
-        "--no-default-browser-check",
-        "--no-first-run",
-        "--no-pings",
-        "--no-sandbox",
-        "--no-zygote",
-        "--password-store=basic",
-        "--use-gl=swiftshader",
-        "--use-mock-keychain",
-      ],
-      defaultViewport: null,
-    });
-
-  // get pages
-  const pages: Page[] = await browser.pages();
-  globalThis.playerPage = pages[0];
-
-  PuppeteerBlocker.fromPrebuiltAdsAndTracking(fetch).then((blocker) => {
-    blocker.enableBlockingInPage(playerPage);
-  });
-
-  // init cookies
-  initCookies();
-
   // init BOT
   const bot = useBot();
   bot.start((ctx) => ctx.reply("Welcome"));
+
+  const app = express();
+
+  // set webhook
+  app.use(
+    await bot.createWebhook({
+      domain: appDomain,
+    }),
+  );
 
   bot.telegram.setMyCommands([
     { command: "play", description: "Play a music" },
@@ -126,19 +73,50 @@ import { useBot } from "./libs/bot";
   globalThis.currentTitle = null;
   globalThis.newTitle = null;
 
-  bot.launch();
+  app.use(
+    cors({
+      origin: "*",
+    }),
+  );
+
+  // console.log(__dirname, path.join(__dirname, "../public/index.html"));
+  app.get("/", (req, res) => {
+    res.send("Yuuuu!!!");
+  });
+
+  const server = http.createServer(app);
+  const io = new Server(server, {
+    cors: {
+      origin: "*",
+    },
+  });
+
+  io.on("connection", (socket) => {
+    globalThis.socket = socket;
+    console.log("a user connected");
+
+    socket.on("play", (msg) => {
+      console.log("msg", msg);
+    });
+  });
+
+  // setTimeout(() => {
+  //   console.log(globalThis.socket);
+  //   globalThis.socket.emit("play", { a: "v" });
+  // }, 5000);
+
+  // bot.launch();
+  server.listen(port, () => console.log("Listening on port", port));
 
   // Enable graceful stop
   process.once("SIGINT", async () => {
     console.log("SIGINT");
-    await browser.close();
     await prisma.$disconnect();
     bot.stop("SIGINT");
   });
 
   process.once("SIGTERM", async () => {
     console.log("SIGTERM");
-    await browser.close();
     await prisma.$disconnect();
     bot.stop("SIGTERM");
   });
